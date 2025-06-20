@@ -27,7 +27,12 @@ def default_route(P):
     def first_menu(sub):
         try:
             if P.ModelSetting is not None and (P.package_name == 'system' and sub != 'home'):
-                P.ModelSetting.set('recent_menu_plugin', '{}'.format(sub))
+                current_menu = sub
+                for except_menu in P.recent_menu_plugin_except_list:
+                    if current_menu.startswith(except_menu) or current_menu == except_menu:
+                        break
+                else:
+                    P.ModelSetting.set('recent_menu_plugin', current_menu)
             for module in P.module_list:
                 if sub == module.name:
                     first_menu =  module.get_first_menu()
@@ -88,7 +93,12 @@ def default_route(P):
         if sub2 == 'null':
             return
         if P.ModelSetting is not None:
-            P.ModelSetting.set('recent_menu_plugin', '{}|{}'.format(sub, sub2))
+            current_menu = f"{sub}|{sub2}"
+            for except_menu in P.recent_menu_plugin_except_list:
+                if current_menu.startswith(except_menu) or current_menu == except_menu:
+                    break
+            else:
+                P.ModelSetting.set('recent_menu_plugin', current_menu)
         try:
             for module in P.module_list:
                 if sub == module.name:

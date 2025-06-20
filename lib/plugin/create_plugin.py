@@ -52,6 +52,7 @@ class PluginBase(object):
             self.home_module = setting.get('home_module')
             self.status = "init_success"
             self.config = {}
+            self.recent_menu_plugin_except_list = setting.get('recent_menu_plugin_except_list', [])
         except Exception as e: 
             self.logger.error(f'Exception:{str(e)}')
             self.logger.error(traceback.format_exc())

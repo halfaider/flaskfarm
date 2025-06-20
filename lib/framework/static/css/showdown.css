@@ -158,3 +158,13 @@ pre code {
     color: white;
     font-size: 0.8em !important;
 }
+
+p {
+  margin: 0px;
+  padding: 0px;
+}
+
+ul {
+  padding-left: 0px;
+  margin-left: 25px;
+}
