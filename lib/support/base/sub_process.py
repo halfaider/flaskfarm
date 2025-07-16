@@ -109,6 +109,15 @@ class SupportSubprocess(object):
             logger.error(f"Exception:{str(e)}")
             logger.error(traceback.format_exc())
             logger.error('command : %s', command)
+        finally:
+            try:
+                if process.stdout:
+                    process.stdout.close()
+                if process.stdin:
+                    process.stdin.close()
+            except Exception as e:
+                pass
+
     
 
     __instance_list = []

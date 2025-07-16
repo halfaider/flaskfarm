@@ -20,26 +20,26 @@ from discord_webhook import DiscordEmbed, DiscordWebhook
 from . import logger
 
 webhook_list = [
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIyODM4MzE4MzI4MjIyNy9ORXpNWFBmT05vbUU3bl8xck1iT0ZWQUI4ZmlXN21vRFlGYnJHRk03UlJSWF90ZGMyS0lxY2hWcXV6VF8wVm5ZUEJRVQ==').decode('utf-8'), # 1
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIyODc5MzExMzU4MzY3Ni94dEZlWnRWbkhEUGc4aFBYZkZDMkFidUtDSmlwNjQ0d1RQMDFJalVncTR5ODB6XzZCRi1kTFctemlEdGNlWF84RXVtRw==').decode('utf-8'), # 2
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIyODkyMTA4MTgxMDk1NS9xOUVYZndHYll6bHdwM1MtMnpxUmxZcnJYWS1nTUttTTRlTUd0YW8zNTF1d1c2N0U2ckNFUW0zWDJhbDJURnFXMHR4cw==').decode('utf-8'), # 3
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIyOTA4MzA0NDg1MTc3My9jVU1YRkVERHQ2emtWOW90Mmd5dlpYeVlOZV9VcGtmcmZhTzg5aHZoLVdod0c0Z24zOGJhT19DVkg2Z0N4clFraVZRcA==').decode('utf-8'), # 4
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIyOTE4MzAwMzQ5MjM5Mi9CVXl1U3lKTHc1cktHdFRKOWhqRDk3SklKWW9HSTZ6SnJ4MzdLX0s4TkVKU3ZTYlZ4aC0tMVFRMEFZbTJFa0tzaEJRcQ==').decode('utf-8'), # 5
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIyOTI4OTQ4ODQ5NDY0My9XLWhZck95QTBza2M1dUdVTkpyenU4ZHFSMVF0QmMtOVAzMW45RHhQWkhVLXptdEZ3MWVLWTE0dlZubkRUV25EU2ZRTw==').decode('utf-8'), # 6
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIyOTQwOTExODQzNzQ2OS95NDRjVTkwM1hLS2NyaWFidERHMzRuMzZfRkZsMF9TV2p4b0lWMlBZY0dxNWxyU1dxVWt5ZklkZlcwM0FFVDJObThMaQ==').decode('utf-8'), # 7
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIyOTQ5NTQyNDYxODQ5Ni9PSnFlVHRhZ1FtVGFrU2VNQkRucVhZRTJieWRuX2cweHV2VTA0WmdKS3NjWEQydkVHbHBWYzdhQWZMQ0ZYSXNTbTN5OQ==').decode('utf-8'), # 8
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIyOTU4NzE2NjY0MjM2OC9PeG9NRllUT1dOWmcwS3pfQ3k2ZXowX2laQnpqbm02QVkyTjJfMWhaVHhYdWxPRm5oZ0lsOGxxcUVYNVVWRWhyMHJNcw==').decode('utf-8'), # 9
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIyOTY4OTM3NzYzNjQ3Mi9iblgyYTNsWjI1R2NZZ1g4Sy1JeXZVcS1TMV9zYmhkbEtoSTI4eWp6SWdHOHRyekFWMXBKUkgxYkdrdmhzMVNUNS1uMg==').decode('utf-8'), # 10
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIyOTgwMTg0MzY5MTY4Mi96OUFocjZjNmxaS1VyWV9TRmhfODVQeEVlSjJuQW8wMXlHS3RCUWpNNnJmR3JGVXdvQ1oyQ3NJYmlTMHQ1NDZwU3NUUg==').decode('utf-8'), # 11
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIyOTk0NjQyMTM2Njg0NC9BYnFVRlJCN0dzb3ktUkdfMzBLNXZkNm9XUWRnbkpDZ1ctTlpBbkFRN0N2TzdsNjRfeXRkY0ZHUkhLV2RldE1jQzhTSw==').decode('utf-8'), # 12
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIzMDExNjAyNjQyMTM0OC82dG1NOTA2eV9QTHJ3WGFxcGNZS25OMEJIQjlDTkxJT1dJeTdpc3Exbm9VMHJxU2V0NzI2R1Y4Zk9Ua2pCbDZacXMxVA==').decode('utf-8'), # 13
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIzMDIwMTExMjA3MjM2My9DYkdkcVdvd3hCcTV3ck1hck0taGZqajVIbFJ2VFFWa0tuZUVaVl9yMlc1UkxHZFZpWW15VzZZcl9PbEJCZG5KWk1wNw==').decode('utf-8'), # 14
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIzMDI5MTUwNzcyNDQwOC9UanJFc08zSTJyT3l0d0ZvVFhUSlNTOXphaDJpbG9CcVk3TzhHMHZWbDROTmI0aGpaaDNjVGo0cGNla2lxa3RqaGRPTg==').decode('utf-8'), # 15
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIzMDM3NDQ4NzgzNDc3NC85ZFpodjZfajRuT0hpbGtMaFVVc1B6OVFKa2dqQ3BJZ19PWE55YnZtV1BiQlNVdmRZWC1IVW5UM3RneDlKdnZlYjVMZw==').decode('utf-8'), # 16
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIzMDU2ODkzMTU2OTc3NC82MTFBVTg0ZUZBcXllWlktQ2lPbnozbm4zSHg3ZldwQUNCbjlMTFNENUFJdHRkYjVHSm9pV3B1dHpxdEVHZ3l0RHlXYg==').decode('utf-8'), # 17
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIzMDY3MzkxMDgwMDM4Ni9jbEZvZHEwREhGNUlvYUtVRXVRcXNGbnB3OXZoZUx1RU1qbVJFNjQyRUZGa21wYXBwMzhYWDNPMmZKWUVSdjMzY0tORg==').decode('utf-8'), # 18
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIzMDc0OTMyMDE5NjE5OC8weE1vZ2o5UXRCM1NGZE5KYk04STk1LU9XQzI2Zm1WTWpjelpSX2REY2hnblZoUk1QelVzRHFlYTc0QUdISFRFVWFVZQ==').decode('utf-8'), # 19
-    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTE2MjIzMDg0NTMxNTIyMzU2Mi9HWVItZUo2WFltdy1VMHRkWWY5QXdnU2JVZFpSb1k4aWx2MlVxaVJBSnlBdDBsYWV5ck1tSzJmRGp5T1YyenBJUUR2bA==').decode('utf-8'), # 20
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1MTkwMTk2NzE1NTMwNS9uY01aaWZVVDY3ZTRISXdPeG8xM0dLdFBTNFBnVjZZSDBZaU1SQ2FMQkNfMU0yMHo3WmNFRjExM2xnY0NpRTFFdnhEZQ==').decode('utf-8'), # 1
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1MjY1NjQwOTA3MTY0Ni9zUjlHZFJMbERrQV9Cc243UkdvQXQ3TmVSMU9SVFRxczVqUEc5UU9PYTJCbjllTTI1YnctV0FXZ2pYT1pYa183U0V4Wg==').decode('utf-8'), # 2
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1MjkyNDExOTA0NDE4OC9wX3ZMN211eElKUmFWOXRDVG56S3c4LVJjY0R5V1JaSjdER2dYc1YwaXlLVGFjZEM4MVBiYmctWHFzY0NDTk5jdXpWeQ==').decode('utf-8'), # 3
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1MzE2MjE1ODI0MzkwMS9KdDMwZjlTTTR6dWNfVmYwSVlmbzdZNTluOFI5T2RQazNXdTFtNG93MHZxZFJERXlneVZvb25Rdm1QbVRya1lOVTRyag==').decode('utf-8'), # 4
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1MzMyNzY1MzE1ODk4Mi82Nk0zZVFyRGpSZG1UTzExaXZlMGhlTFFpNGwtckZUN1lRYTJ3elpmMjNBOGZPYm1CYjJSRmhxR2dNSHNlNUdHSFNLTA==').decode('utf-8'), # 5
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1MzU1ODAzNzg5MzIxNC84aWFNLTJIdXJFOW1XM0RqY293dm9tUVhUeUxLOElrbWR5SnhsY1BFRzJ4MjBqOTNIN0FWNnY0dVJIak5XeGprcjg4Tw==').decode('utf-8'), # 6
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1MzczMTQzNDYxMDc0OS9xRktGX0hSWDRYVHFYMVFPRzM5YWNJVkp6dmdRZXBzZjM2TEFEUlpNOWtiZ0pNUHVfd091OXZ4bXdZVVBRMUpkUjhhRg==').decode('utf-8'), # 7
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1Mzg1NTI0NjI3NDYwMS9vWGVxYVdhWENNZktkM19iZktEVjB0Ti1XQzUyLUxpVjU0VjQxWE1jNWd3XzJmQnpnekp4MzJNYS1wOWlvQkFpd1I3Mw==').decode('utf-8'), # 8
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1Mzk5MDgyNzE1MTQ2MS85a0xXTXZCY1FaNzZRcnRpZmVJck9DOXo5SXl1WGl4YnRmbldocHVjSlFRVUJqcGxSd0tIdzdDc0h3THJhQkRQM1h5ag==').decode('utf-8'), # 9
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1NDExMjQ1NzYzNzg5OC9ZVC1qblZTeWFxcjAxMjFtWUtVZFU1SjJaVFZHS0NOM2djUDI2RXEwWm5hR3RWeFllM3NZa0kyUG81RWhPd211WDd6aw==').decode('utf-8'), # 10
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1NDI1Mzg1MTk1NTMxMS9RVUt1cU5uWFFiaWkwU01FMWxkU0lEakxhZXh5RDRUZEZuLWdXejFuSXRlYy1mSFVCU3dxUDd3WHNBbDB1dXd2VVJTRw==').decode('utf-8'), # 11
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1NDM3NDMyNDgxMzkyNS9VR1Jsc3liY2dPQ3hoMVQ1Z0J0QVc2RGQyZ0dPaGVOXzcydy15QTBvZzU5aU1BcnB3WWxVRzhka0ZXTUxSVUZpaHFScw==').decode('utf-8'), # 12
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1NDUxNjE5NzI3Nzc2Ny9iOEFIN1FtY2JPSl9XcUVHZmtMOVNPbXBJMWluVThvcDF4amQwWGFjRXFFZW82ZURzbS0yYkpZYllmQ1RYclMxbHhUdQ==').decode('utf-8'), # 13
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1NDY0MDIzMTIzOTcwMS90bkFSTzFvYWo1SWRmb0U4UEVJejRZUVMxNFhKXzdpc0I5Q1otdzVyaXdDN0U0cVVzQ1B6V2pLRnM3WE9OazBvVEo5Qg==').decode('utf-8'), # 14
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1NDc1NTcxNzIwMTk4MS9WLWQwc0hvNl9QakJTdFpLVmtuSTdDS0RuQks1QzRhS2dPZUZ4azEwam41VE5oZk1PdFNOSFNHN3BpaGNWLVh6Y0kxZg==').decode('utf-8'), # 15
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1NDg4NDc4NDMyNDYxOS9XVEpHWWVjcjVKOHhtN0hTaUpCbmdnU01Uc3JkMUxiaDVwQzB2Vm5tYVptZWlvd2RRZWZQRHRuZHowRmViWE9xYkNoeA==').decode('utf-8'), # 16
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1NTAxMTIxMzA5OTEyOS9neHVVenpsMTBpMUV4NWZtdU5jZGlOQ2FocHBEM3liQlpxaTR3Y3phdlpGeG1OUGx2VFRadU9CalZCMTBOZzJ2QWpLcA==').decode('utf-8'), # 17
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1NTEzMjg4OTczMTE1My9YcTU4cXdCTGlOOEF4S1djQTl0MFJERkhIT0NDNjg4MlQ1aXBKbkJxY3VSOFVxMGowSzF4Rko3dUZWaGhRR0RFTjc3bw==').decode('utf-8'), # 18
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1NTI5NzYzNzc5MzgxMy9pV3hoZkxRN190dHhkNENIVnNPWjA2ZHFOUjlkVTZUdlNfdHA2OHVnNlI2WmRIa2dESzJKb28xUVNSa3NrRDhLUXRyTg==').decode('utf-8'), # 19
+    base64.b64decode(b'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTM5NDk1NTQ0NDk0MjAxMjQ4OC9zandtaFNDYjI0ZElYbjBVMWhwMmdJRzZDV2REcC1Kb3M0OW1Oc05jQllGenNDNm1KYVZJOVpoQm11dGt4cXd1bDc1ZA==').decode('utf-8'), # 20
 ]
 
 
@@ -144,16 +144,16 @@ class SupportDiscord(object):
             logger.error(traceback.format_exc())
             if retry:
                 time.sleep(1)
-                return cls.discord_proxy_image(image_url, webhook_url=None, retry=False)
+                return cls.discord_proxy_image(image_url, webhook_url=webhook_url, retry=False)
             else:
                 return image_url
 
     
     @classmethod
-    def discord_proxy_image_localfile(cls, filepath, retry=True):
+    def discord_proxy_image_localfile(cls, filepath, webhook_url=None, retry=True):
         data = None
-        webhook_url =  webhook_list[random.randint(0,len(webhook_list)-1)]
-
+        if webhook_url is None or webhook_url == '':
+            webhook_url =  webhook_list[random.randint(0,len(webhook_list)-1)]
         try:
             webhook = DiscordWebhook(url=webhook_url, content='')
             import io
@@ -187,10 +187,10 @@ class SupportDiscord(object):
 
 
     @classmethod
-    def discord_proxy_image_bytes(cls, bytes, retry=True, format='jpg'):
+    def discord_proxy_image_bytes(cls, bytes, retry=True, format='jpg', webhook_url=None):
         data = None
-        idx = random.randint(0,len(webhook_list)-1)
-        webhook_url =  webhook_list[idx]
+        if webhook_url is None or webhook_url == '':
+            webhook_url =  webhook_list[random.randint(0,len(webhook_list)-1)]
         try:
             webhook = DiscordWebhook(url=webhook_url, content='')
             webhook.add_file(file=bytes, filename=f'image.{format}')

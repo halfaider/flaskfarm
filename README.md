@@ -1,4 +1,8 @@
 # Changelog
+- 4.1.39 (2025.07.16)
+    - get_cache 메소드 추가
+    - 디스코드 웹훅 교체
+<br><br>
 - 4.1.38 (2025.06.19)
     - macro.info에 word-wrap:break-word style 추가.
     - 플러그인 setting 에 recent_menu_plugin_except_list 설정 추가.

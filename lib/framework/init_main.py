@@ -42,6 +42,7 @@ class Framework:
         self.path_app_root = None
         self.path_data = None
         self.users = {}
+        self.get_cache = None
 
         self.__level_unset_logger_list = []
         self.__logger_list = []
@@ -137,6 +138,7 @@ class Framework:
 
         
     def __init_celery(self):
+        redis_port = 6379
         try:
             if self.config['use_celery'] == False:
                 raise Exception('use_celery=False')
@@ -194,6 +196,14 @@ class Framework:
                         if len(args) > 0 and type(args[0]) == type(dummy_func):
                             return args[0]
                         self.f(*args, **kwargs)
+        try:
+            from .init_cache_manager import _RedisManager, get_cache
+            _RedisManager(host='localhost', port=redis_port)
+            self.get_cache = get_cache
+        except Exception as e:
+            self.logger.error(f"get_cache import error: {str(e)}")
+            self.get_cache = None
+
         return celery
 
 

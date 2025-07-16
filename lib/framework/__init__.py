@@ -18,6 +18,7 @@ path_app_root = None
 path_data = None
 get_logger = None
 SystemModelSetting = None
+get_cache = None
 
 def initiaize():
     global F
@@ -32,6 +33,7 @@ def initiaize():
     global path_data
     global get_logger
     global SystemModelSetting
+    global get_cache
 
     F = Framework.get_instance()
     frame = F
