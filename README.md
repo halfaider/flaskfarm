@@ -1,4 +1,7 @@
 # Changelog
+- 4.1.39 (2025.07.18)
+    - Add system command.
+<br><br>
 - 4.1.39 (2025.07.16)
     - get_cache 메소드 추가
     - 디스코드 웹훅 교체

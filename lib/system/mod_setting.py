@@ -132,7 +132,31 @@ class ModuleSetting(PluginModuleBase):
                 ret['type'] = 'warning'
         elif command == 'command_run':
             ret['msg'] = arg1
-            pass
+            SystemModelSetting.set('command_text', arg1)
+            # db이름 set/get key value
+            try:
+                tmp = arg1.strip().split(' ')
+                if tmp[0].startswith('setting'):
+                    plugin = F.PluginManager.get_plugin_instance(tmp[1])
+                    if len(tmp) == 2 or tmp[2] == 'all':
+                        ret['json'] = plugin.ModelSetting.to_dict()
+                        ret['ret'] = 'success'
+                    elif tmp[2] == 'get':
+                        ret['msg'] = plugin.ModelSetting.get(tmp[3])
+                        ret['ret'] = 'success'
+                    elif tmp[2] == 'set':
+                        value = ""
+                        if len(tmp) == 5:
+                            value = tmp[4]
+                        plugin.ModelSetting.set(tmp[3], value)
+                        ret['msg'] = f"{tmp[1]} DB에 {tmp[3]}={value} 저장"
+                    
+            except Exception as e:
+                P.logger.error(f'Exception:{str(e)}')
+                P.logger.error(traceback.format_exc())
+                ret['msg'] = f"실행 실패: {str(e)}"
+                ret['type'] = 'danger'
+
         elif command == 'celery_execute':
             self.celery_execute(arg1, mode='foreground')
         elif command == 'celery_execute_back':

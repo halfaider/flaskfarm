@@ -13,7 +13,7 @@
   {{ macros.setting_checkbox('restart_notify', '시작시 알림', value=arg['restart_notify'], desc=['메시지 ID: system_start']) }}
   {{ macros.setting_select('log_level', '로그 레벨', [['10', 'DEBUG'],['20', 'INFO'],['30', 'WARNING'],['40', 'ERROR'], ['50', 'CRITICAL'] ], value=arg['log_level'], col='3') }}
   {{ macros.m_hr() }}
-  {{ macros.setting_input_text_and_buttons('command_text', 'Command', [['command_run_btn', 'Run']], value='', desc='') }}
+  {{ macros.setting_input_text_and_buttons('command_text', 'Command', [['command_run_btn', 'Run']], value=arg['command_text'], desc='') }}
 </form>
 
 <script type="text/javascript">
