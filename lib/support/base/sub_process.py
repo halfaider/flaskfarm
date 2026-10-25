@@ -1,9 +1,10 @@
-import io
+import codecs
 import json
-import locale
 import os
 import platform
 import queue
+import select
+import signal
 import subprocess
 import threading
 import time
@@ -12,15 +13,115 @@ import traceback
 from . import logger
 
 
+_STREAM_END = object()
+_CALLBACK_END = object()
+_CALLBACK_START = object()
+
+
+def _close_pipe(pipe, command=None):
+    if pipe is not None and not pipe.closed:
+        try:
+            pipe.close()
+        except (OSError, ValueError) as e:
+            logger.warning(
+                'Failed to close subprocess pipe for command %r: %s', command, e
+            )
+
+
+def _read_process_stdout(process, on_chunk):
+    decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+    stream = process.stdout
+    if stream is None:
+        return
+
+    skip_lf = False
+
+    def emit_text(text):
+        nonlocal skip_lf
+        if skip_lf and text:
+            if text.startswith('\n'):
+                text = text[1:]
+            skip_lf = False
+        if text:
+            skip_lf = text.endswith('\r')
+            on_chunk(text.replace('\r\n', '\n').replace('\r', '\n'))
+
+    fd = os.dup(stream.fileno())
+    try:
+        poller = None
+        if platform.system() != 'Windows':
+            poller = select.poll()
+            poller.register(fd, select.POLLIN | select.POLLHUP | select.POLLERR)
+        else:
+            import ctypes
+            import msvcrt
+            from ctypes import wintypes
+
+            kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+            peek_named_pipe = kernel32.PeekNamedPipe
+            peek_named_pipe.argtypes = (
+                wintypes.HANDLE,
+                wintypes.LPVOID,
+                wintypes.DWORD,
+                wintypes.LPVOID,
+                ctypes.POINTER(wintypes.DWORD),
+                wintypes.LPVOID,
+            )
+            peek_named_pipe.restype = wintypes.BOOL
+            available = wintypes.DWORD()
+            handle = msvcrt.get_osfhandle(fd)
+
+        drain_deadline = None
+        while True:
+            if process.poll() is not None:
+                if drain_deadline is None:
+                    drain_deadline = time.monotonic() + 2
+                elif time.monotonic() >= drain_deadline:
+                    break
+
+            if poller is not None:
+                if not poller.poll(100):
+                    continue
+                read_size = 4096
+            else:
+                if not peek_named_pipe(
+                    wintypes.HANDLE(handle), None, 0, None, ctypes.byref(available), None
+                ):
+                    error_code = ctypes.get_last_error()
+                    if error_code == 109:
+                        break
+                    raise ctypes.WinError(error_code)
+                if available.value == 0:
+                    time.sleep(0.05)
+                    continue
+                read_size = min(4096, available.value)
+
+            chunk = os.read(fd, read_size)
+            if not chunk:
+                break
+            emit_text(decoder.decode(chunk))
+
+        emit_text(decoder.decode(b'', final=True))
+    finally:
+        os.close(fd)
+
+
 def demote(user_uid, user_gid):
     def result():
-        os.setgid(user_gid)
+        if user_gid is not None:
+            os.setgid(user_gid)
         os.setuid(user_uid)
     return result
 
 class SupportSubprocess(object):
+    """Run a subprocess and forward its output through a serialized callback.
 
-    @classmethod 
+    The callback must return in finite time. A callback that blocks indefinitely
+    also blocks delivery of terminal events; Python threads cannot be safely
+    force-stopped.
+    """
+
+    @classmethod
     def command_for_windows(cls, command: list): 
         if platform.system() == 'Windows':
             tmp = []
@@ -37,59 +138,120 @@ class SupportSubprocess(object):
     # timeout 적용
     @classmethod
     def execute_command_return(cls, command, format=None, log=False, shell=False, env=None, timeout=None, uid=None, gid=None):
-
+        process = None
         try:
-            logger.debug(f"execute_command_return : {' '.join(command)}")
+            logger.debug('execute_command_return : %r', command)
             command = cls.command_for_windows(command)
 
-            iter_arg =  ''
+            popen_options = {
+                'stdin': subprocess.PIPE,
+                'stdout': subprocess.PIPE,
+                'stderr': subprocess.STDOUT,
+                'universal_newlines': True,
+                'shell': shell,
+                'env': env,
+                'encoding': 'utf8',
+                'errors': 'replace',
+            }
             if platform.system() == 'Windows':
-                process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, shell=shell, env=env, encoding='utf8', bufsize=0)
-            else:
-                if uid == None:
-                    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, shell=shell, env=env, encoding='utf8')
-                else:
-                    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, shell=shell, env=env, preexec_fn=demote(uid, gid), encoding='utf8')
+                popen_options['bufsize'] = 0
+            elif uid is not None:
+                popen_options['preexec_fn'] = demote(uid, gid)
+            if platform.system() != 'Windows':
+                popen_options['start_new_session'] = True
+            process = subprocess.Popen(command, **popen_options)
             new_ret = {'status':'finish', 'log':None}
 
-            def func(ret):
-                with process.stdout:
-                    try:
-                        for line in iter(process.stdout.readline, iter_arg):
-                            ret.append(line.strip())
-                            if log:
-                                logger.debug(ret[-1])
-                    except Exception:
-                        logger.exception(command)
-            
-            result = []
-            thread = threading.Thread(target=func, args=(result,))
-            thread.setDaemon(True)
-            thread.start()
-            #thread.join()
+            if log:
+                output_chunks = []
+                pending_log = ['']
 
-            try:
-                #process.communicate()
-                process_ret = process.wait(timeout=timeout) # wait for the subprocess to exit
-            except Exception:
-                logger.exception(command)
-                import psutil
-                process = psutil.Process(process.pid)
-                for proc in process.children(recursive=True):
-                    proc.kill()
-                process.kill()
-                new_ret['status'] = "timeout"
-            #logger.error(process_ret)
-            thread.join()
-            #ret = []
-            #with process.stdout:
-            #    for line in iter(process.stdout.readline, iter_arg):
-            #        ret.append(line.strip())
-            #        if log:
-            #            logger.debug(ret[-1])
-           
-            ret = result
-            #logger.error(ret)
+                def capture_and_log(chunk):
+                    output_chunks.append(chunk)
+                    pending_log[0] += chunk
+                    lines = pending_log[0].split('\n')
+                    pending_log[0] = lines.pop()
+                    for line in lines:
+                        logger.debug('%s', line)
+
+                _close_pipe(process.stdin, command)
+
+                reader_errors = []
+
+                def read_and_capture():
+                    try:
+                        _read_process_stdout(process, capture_and_log)
+                    except Exception as e:
+                        reader_errors.append(e)
+                        try:
+                            cls.__kill_process_tree(process)
+                        except Exception:
+                            logger.exception(
+                                'Failed stopping subprocess after stdout read error for command %r',
+                                command,
+                            )
+
+                reader = threading.Thread(
+                    target=read_and_capture,
+                    daemon=True,
+                )
+                reader.start()
+                try:
+                    process.wait(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    new_ret['status'] = 'timeout'
+                    logger.warning(
+                        'Command %r timed out after %s seconds', command, timeout
+                    )
+                    cls.__kill_process_tree(process)
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                reader.join(timeout=3)
+                if reader.is_alive():
+                    logger.warning(
+                        'Subprocess output reader did not stop before deadline for command %r',
+                        command,
+                    )
+                    _close_pipe(process.stdout, command)
+                    reader.join(timeout=1)
+                if reader.is_alive():
+                    raise RuntimeError(
+                        'Subprocess output reader did not stop; output may be incomplete'
+                    )
+                if reader_errors:
+                    raise reader_errors[0]
+                if pending_log[0]:
+                    logger.debug('%s', pending_log[0])
+                output = ''.join(output_chunks)
+            else:
+                try:
+                    output, _ = process.communicate(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    new_ret['status'] = 'timeout'
+                    logger.warning(
+                        'Command %r timed out after %s seconds', command, timeout
+                    )
+                    cls.__kill_process_tree(process)
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    try:
+                        output, _ = process.communicate(timeout=5)
+                    except subprocess.TimeoutExpired as e:
+                        output = e.output or ''
+
+            if isinstance(output, bytes):
+                output = output.decode('utf-8', errors='replace')
+
+            lines = output.split('\n')
+            if lines and lines[-1] == '':
+                lines.pop()
+            ret = [line.strip() for line in lines]
             if format is None:
                 ret2 = '\n'.join(ret)
             elif format == 'json':
@@ -101,30 +263,33 @@ class SupportSubprocess(object):
                             index = idx
                             break
                     ret2 = json.loads(''.join(ret[index:]))
-                except Exception:
-                    logger.exception(command)
+                except:
                     ret2 = ret
+            else:
+                ret2 = ret
 
             new_ret['log'] = ret2
             return new_ret
-        except Exception as e: 
-            logger.error(f"Exception:{str(e)}")
-            logger.error(traceback.format_exc())
-            logger.error('command : %s', command)
+        except Exception:
+            logger.exception(
+                'Failed executing subprocess command %r (timeout=%r)', command, timeout
+            )
         finally:
-            try:
-                if process.stdout:
-                    process.stdout.close()
-                if process.stdin:
-                    process.stdin.close()
-                if process.stderr:
-                    process.stderr.close()
-            except Exception as e:
-                pass
+            if process is not None:
+                if process.poll() is None:
+                    cls.__kill_process_tree(process)
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                for pipe in (process.stdin, process.stdout):
+                    _close_pipe(pipe, getattr(process, 'args', None))
 
     
 
     __instance_list = []
+    __instance_lock = threading.RLock()
 
 
     def __init__(self, command,  print_log=False, shell=False, env=None, timeout=None, uid=None, gid=None, stdout_callback=None, call_id=None, callback_line=True):
@@ -141,234 +306,395 @@ class SupportSubprocess(object):
         self.call_id = call_id
         self.timestamp = time.time()
         self.callback_line = callback_line
-        
+        self.reader_thread = None
+        self.collector_thread = None
+        self.callback_thread = None
+        self.output_queue = None
+        self.__output_error = None
+        self.__process_lock = threading.Lock()
+        self.__stop_requested = False
+        self.__last_callback = time.monotonic()
+        self.__callback_terminal_error = None
+        self.__callback_terminal_lock = threading.Lock()
+        self.__callback_terminal_sent = threading.Event()
 
     def start(self, join=True):
         try:
-            self.thread = threading.Thread(target=self.__execute_thread_function, args=())
-            self.thread.setDaemon(True)
+            with self.__instance_lock:
+                self.__instance_list.append(self)
+            self.thread = threading.Thread(
+                target=self.__execute_thread_function, daemon=True
+            )
             self.thread.start()
             if join:
                 self.thread.join()
-        except Exception as e: 
-            logger.error(f'Exception:{str(e)}')
-            logger.error(traceback.format_exc())
+        except Exception:
+            logger.exception('Failed to start subprocess command %r', self.command)
+            self.remove_instance(self)
+            self.send_stdout_callback(self.call_id, 'ERROR', traceback.format_exc())
+            self.send_stdout_callback(self.call_id, 'END', None)
 
 
     def __execute_thread_function(self):
+        process = None
+        error = None
         try:
             self.command = self.command_for_windows(self.command)
-            logger.debug(f"{self.command=}")
-            if platform.system() == 'Windows':
-                self.process = subprocess.Popen(self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, shell=self.shell, env=self.env, encoding='utf8', bufsize=0)
-
-            else:
-                if self.uid == None:
-                    self.process = subprocess.Popen(self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, shell=self.shell, env=self.env, encoding='utf8', bufsize=0)
-                else:
-                    self.process = subprocess.Popen(self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, shell=self.shell, env=self.env, preexec_fn=demote(self.uid, self.gid), encoding='utf8', bufsize=0)
-            SupportSubprocess.__instance_list.append(self)
-            self.send_stdout_callback(self.call_id, 'START', None)
+            logger.debug('Starting subprocess command %r', self.command)
+            popen_options = {
+                'stdin': subprocess.PIPE,
+                'stdout': subprocess.PIPE,
+                'stderr': subprocess.STDOUT,
+                'universal_newlines': True,
+                'shell': self.shell,
+                'env': self.env,
+                'encoding': 'utf8',
+                'errors': 'replace',
+                'bufsize': 0,
+            }
+            if platform.system() != 'Windows' and self.uid is not None:
+                popen_options['preexec_fn'] = demote(self.uid, self.gid)
+            if platform.system() != 'Windows':
+                popen_options['start_new_session'] = True
+            process = subprocess.Popen(self.command, **popen_options)
+            with self.__process_lock:
+                self.process = process
+                stop_requested = self.__stop_requested
+            if stop_requested:
+                self.process_close()
             self.__start_communicate()
-            self.__start_send_callback()
-            if self.process is not None:
-                if self.timeout != None:
-                    self.process.wait(timeout=self.timeout)
-                else:
-                    self.process.wait()
-            logger.info(f"{self.command} END")
-        except Exception as e: 
-            logger.error(f'Exception:{str(e)}')
-            logger.error(traceback.format_exc())
-            logger.warning(self.command)
-            self.send_stdout_callback(self.call_id, 'ERROR', str(e))
-            self.send_stdout_callback(self.call_id, 'ERROR', str(traceback.format_exc()))
-            self.process_close()
+            process.wait(timeout=self.timeout)
+            logger.info('Subprocess command %r END', self.command)
+        except subprocess.TimeoutExpired:
+            error = 'Command timed out after %s seconds' % self.timeout
+            logger.warning(
+                'Subprocess command %r timed out after %s seconds',
+                self.command,
+                self.timeout,
+            )
+            if process is not None:
+                self.__kill_process_tree(process)
+        except Exception:
+            error = traceback.format_exc()
+            logger.exception('Failed running subprocess command %r', self.command)
         finally:
-            if self.stdout_callback != None:
-                #self.stdout_callback(self.call_id, 'thread_end', None)
-                pass
-            self.remove_instance(self)
-            self.process = None
+            if process is not None:
+                try:
+                    if process.poll() is None:
+                        self.process_close()
+                    process.wait()
+                except Exception:
+                    error = error or traceback.format_exc()
+                    logger.exception('Failed waiting for subprocess command %r', self.command)
+                for thread in (self.reader_thread, self.collector_thread):
+                    if thread is not None:
+                        try:
+                            thread.join(timeout=3)
+                            if thread.is_alive():
+                                error = error or 'Subprocess output reader did not stop before its deadline'
+                                logger.warning(
+                                    '%s (command=%r)', error, self.command
+                                )
+                                if self.output_queue is not None:
+                                    self.output_queue.put(None)
+                                if self.stdout_queue is not None:
+                                    self.stdout_queue.put(_STREAM_END)
+                                thread.join(timeout=1)
+                        except Exception:
+                            error = error or traceback.format_exc()
+                            logger.exception(
+                                'Failed joining output worker for command %r', self.command
+                            )
+                self.__close_pipes(process)
 
-    def __close_pipes(self):
-        if self.process is not None:
-            logger.debug(f"Close pipes of the process: {self.command}")
-            try:
-                if self.process.stdin: self.process.stdin.close()
-            except Exception: pass
-            try:
-                if self.process.stdout: self.process.stdout.close()
-            except Exception: pass
-            try:
-                if self.process.stderr: self.process.stderr.close()
-            except Exception: pass
+            error = error or self.__output_error
+            callback_started = (
+                self.callback_thread is not None
+                and self.callback_thread.ident is not None
+            )
+            if callback_started:
+                with self.__callback_terminal_lock:
+                    self.__callback_terminal_error = (
+                        self.__callback_terminal_error or error
+                    )
+                self.stdout_queue.put(_STREAM_END)
+                self.stdout_queue.put(_CALLBACK_END)
+                try:
+                    self.__last_callback = time.monotonic()
+                    while self.callback_thread.is_alive():
+                        self.callback_thread.join(timeout=1)
+                        if (
+                            self.callback_thread.is_alive()
+                            and time.monotonic() - self.__last_callback > 10
+                        ):
+                            error = error or 'Subprocess callback is not responding'
+                            with self.__callback_terminal_lock:
+                                self.__callback_terminal_error = error
+                            logger.warning('%s (command=%r)', error, self.command)
+                            break
+                except Exception:
+                    error = error or traceback.format_exc()
+                    with self.__callback_terminal_lock:
+                        self.__callback_terminal_error = error
+                    logger.exception(
+                        'Failed joining callback worker for command %r', self.command
+                    )
+                if (
+                    not self.callback_thread.is_alive()
+                    and not self.__callback_terminal_sent.is_set()
+                ):
+                    with self.__callback_terminal_lock:
+                        terminal_error = self.__callback_terminal_error
+                    if terminal_error is not None:
+                        self.send_stdout_callback(
+                            self.call_id, 'ERROR', terminal_error
+                        )
+                    self.send_stdout_callback(self.call_id, 'END', None)
+                    self.__callback_terminal_sent.set()
+            else:
+                if error is not None:
+                    self.send_stdout_callback(self.call_id, 'ERROR', error)
+                if process is not None or error is not None:
+                    self.send_stdout_callback(self.call_id, 'END', None)
+            self.remove_instance(self)
+            with self.__process_lock:
+                self.process = None
+
+    @staticmethod
+    def __close_pipes(process):
+        if process is not None:
+            for stream in (process.stdin, process.stdout, process.stderr):
+                _close_pipe(stream, getattr(process, 'args', None))
 
     def __start_communicate(self):
         self.stdout_queue = queue.Queue()
-        sout = io.open(self.process.stdout.fileno(), 'rb', closefd=False)
-       
-        def Pump(stream):
-            _queue = queue.Queue()
-            
-            def rdr():
+        stdout_queue = self.stdout_queue
+        stdout_queue.put(_CALLBACK_START)
+        process = self.process
+        output_queue = self.output_queue = queue.Queue()
+        if process is None or process.stdout is None:
+            raise RuntimeError('Subprocess stdout is unavailable')
+
+        def read_stdout():
+            try:
+                _read_process_stdout(process, output_queue.put)
+            except Exception:
+                self.__output_error = traceback.format_exc()
+                logger.exception('Failed reading subprocess output for command %r', self.command)
+                self.process_close()
+            finally:
+                output_queue.put(None)
+
+        def collect_output():
+            try:
                 while True:
-                    if self.process is None or self.process.stdout is None:
+                    chunk = output_queue.get()
+                    if chunk is None:
                         break
-                    try:
-                        buf = self.process.stdout.read(1)
-                    except Exception:
-                        logger.exception(self.command)
-                        continue
-                    #print(buf)
-                    if buf:
-                        _queue.put( buf )
-                    else: 
-                        _queue.put( None )
+                    finished = False
+                    chunk_size = len(chunk)
+                    while chunk_size < 65536:
+                        try:
+                            following = output_queue.get(timeout=0.005)
+                        except queue.Empty:
+                            break
+                        if following is None:
+                            finished = True
+                            break
+                        chunk += following
+                        chunk_size += len(following)
+                    stdout_queue.put(chunk)
+                    if finished:
                         break
-                _queue.put( None )
-                '''
-                2025.12.07. halfaider
+            except Exception:
+                self.__output_error = self.__output_error or traceback.format_exc()
+                logger.exception(
+                    'Failed collecting subprocess output for command %r', self.command
+                )
+            finally:
+                stdout_queue.put(_STREAM_END)
 
-                communicate() 혹은 with 문을 사용하지 않을 경우 파이프를 명시적으로 닫아줘야 함
-                __execute_thread_function()에서 파이프를 닫아버리면 남은 버퍼를 처리하느라 여기서 오류가 발생할 수 있음
-                그래서 파이프는 소비하는 이곳에서 닫는 걸로...
-                '''
-                self.__close_pipes()
-                time.sleep(1)
-
-            def clct():
-                active = True
-                while active:
-                    r = _queue.get()
-                    if r is None:
-                        break
-                    try:
-                        while True:
-                            r1 = _queue.get(timeout=0.005)
-                            if r1 is None:
-                                active = False
-                                break
-                            else:
-                                r += r1
-                    except queue.Empty:
-                        pass
-                    except Exception:
-                        logger.exception(self.command)
-                    if r is not None:
-                        #print(f"{r=}")
-                        self.stdout_queue.put(r)
-                self.stdout_queue.put('\n')
-                self.stdout_queue.put('<END>')
-                self.stdout_queue.put('\n')
-            for tgt in [rdr, clct]:
-                th = threading.Thread(target=tgt)
-                th.setDaemon(True)
-                th.start()
-        Pump(sout)
+        self.reader_thread = threading.Thread(target=read_stdout, daemon=True)
+        self.collector_thread = threading.Thread(target=collect_output, daemon=True)
+        self.__start_send_callback()
+        self.reader_thread.start()
+        self.collector_thread.start()
 
 
     def __start_send_callback(self):
-        def func():
-            while self.stdout_queue:
-                line = self.stdout_queue.get()
-                #logger.error(line)
-                if line == '<END>':
-                    self.send_stdout_callback(self.call_id, 'END', None)
-                    break
-                else:
-                    self.send_stdout_callback(self.call_id, 'LOG', line)
-            self.remove_instance(self)
-
-        def func_callback_line():
+        def send_callback():
             previous = ''
-            while self.stdout_queue:
-                receive = previous + self.stdout_queue.get()
-                lines = receive.split('\n')
-                previous = lines[-1]
-
-                for line in lines[:-1]:
-                    line = line.strip()
-                    # TODO
-                    #logger.error(line)
-                    if line == '<END>':
-                        self.send_stdout_callback(self.call_id, 'END', None)
+            try:
+                while True:
+                    item = self.stdout_queue.get()
+                    if item is _CALLBACK_START:
+                        self.send_stdout_callback(self.call_id, 'START', None)
+                        continue
+                    if item is _STREAM_END:
                         break
-                    else:
-                        self.send_stdout_callback(self.call_id, 'LOG', line)
-            self.remove_instance(self)
 
-        if self.callback_line:
-            th = threading.Thread(target=func_callback_line, args=())
-        else:
-            th = threading.Thread(target=func, args=())
-        th.setDaemon(True)
-        th.start()
+                    chunks = [item]
+                    chunk_size = len(item)
+                    while chunk_size < 65536:
+                        try:
+                            item = self.stdout_queue.get(timeout=0.005)
+                        except queue.Empty:
+                            break
+                        if item is _STREAM_END:
+                            break
+                        chunks.append(item)
+                        chunk_size += len(item)
+
+                    receive = ''.join(chunks)
+                    if self.callback_line:
+                        lines = (previous + receive).split('\n')
+                        previous = lines.pop()
+                        for line in lines:
+                            self.send_stdout_callback(self.call_id, 'LOG', line.strip())
+                    else:
+                        self.send_stdout_callback(self.call_id, 'LOG', receive)
+
+                    if item is _STREAM_END:
+                        break
+
+                if self.callback_line and previous:
+                    self.send_stdout_callback(self.call_id, 'LOG', previous.strip())
+            except Exception:
+                with self.__callback_terminal_lock:
+                    self.__callback_terminal_error = (
+                        self.__callback_terminal_error or traceback.format_exc()
+                    )
+                logger.exception(
+                    'Failed forwarding subprocess output for command %r', self.command
+                )
+            finally:
+                while self.stdout_queue.get() is not _CALLBACK_END:
+                    pass
+                with self.__callback_terminal_lock:
+                    error = self.__callback_terminal_error
+                try:
+                    if error is not None:
+                        self.send_stdout_callback(self.call_id, 'ERROR', error)
+                    self.send_stdout_callback(self.call_id, 'END', None)
+                finally:
+                    self.__callback_terminal_sent.set()
+
+        self.callback_thread = threading.Thread(target=send_callback, daemon=True)
+        self.callback_thread.start()
 
 
 
     def process_close(self):
-        if self.process is None:
-            return
+        with self.__process_lock:
+            self.__stop_requested = True
+            process = self.process
         try:
-            #self.process.terminate()
-            #self.process.wait(self.timeout or 5)
-            # terminate()하면 재시작시 기존과 다르게 동작, 일관성 위해 기존처럼 kill()
-            self.process.kill()
+            if process is not None:
+                self.__kill_process_tree(process)
         except Exception:
+            logger.exception('Failed to stop subprocess command %r', self.command)
+
+    @staticmethod
+    def __kill_process_tree(process):
+        if process.poll() is not None:
+            return
+
+        if platform.system() != 'Windows':
+            # Policy: stop the group only while its leader is alive. This avoids
+            # signaling a reused PID; descendants left after normal leader exit
+            # are outside this cleanup path's supervision.
+            if process.poll() is not None:
+                return
             try:
-                self.process.kill()
-                self.process.wait(self.timeout or 5)
-            except Exception:
-                logger.exception(f"Failed to kill process: {self.command}")
-        finally:
-            #self.stdout_queue = None
-            self.remove_instance(self)
-            self.process = None
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except OSError as e:
+                logger.warning(
+                    'Could not terminate subprocess group for command %r: %s',
+                    getattr(process, 'args', None),
+                    e,
+                )
+            if process.poll() is None:
+                process.kill()
+            return
+
+        try:
+            import psutil
+        except ImportError:
+            psutil = None
+
+        if psutil is not None:
+            try:
+                children = psutil.Process(process.pid).children(recursive=True)
+                for child in children:
+                    try:
+                        child.kill()
+                    except psutil.Error:
+                        pass
+            except psutil.Error as e:
+                logger.debug(
+                    'Could not inspect subprocess children for command %r: %s',
+                    getattr(process, 'args', None),
+                    e,
+                )
+
+        if process.poll() is None:
+            process.kill()
 
     def input_command(self, cmd):
-        if self.process != None:
-            self.process.stdin.write(f'{cmd}\n')
-            self.process.stdin.flush()
+        with self.__process_lock:
+            process = self.process
+        if process is not None and process.stdin is not None and not process.stdin.closed:
+            process.stdin.write(f'{cmd}\n')
+            process.stdin.flush()
 
     def send_stdout_callback(self, call_id, mode, data):
+        self.__last_callback = time.monotonic()
         try:
             if self.stdout_callback != None:
                 self.stdout_callback(self.call_id, mode, data)
-        except Exception as e: 
-            logger.error(f'Exception:{str(e)}')
-            logger.error(f"[{call_id}] [{mode}] [{data}]")
-            #logger.error(traceback.format_exc())   
+        except Exception:
+            logger.exception(
+                'Subprocess callback failed for command %r (call_id=%r, mode=%r, data=%r)',
+                self.command,
+                call_id,
+                mode,
+                data,
+            )
 
 
     @classmethod
     def all_process_close(cls):
-        for instance in cls.__instance_list:
+        with cls.__instance_lock:
+            instances = list(cls.__instance_list)
+        for instance in instances:
             instance.process_close()
-        cls.__instance_list = []
-
 
     @classmethod
     def remove_instance(cls, remove_instance):
-        new = []
-        for instance in cls.__instance_list:
-            if remove_instance.timestamp == instance.timestamp:
-                continue
-            new.append(instance)
-        cls.__instance_list = new
+        with cls.__instance_lock:
+            cls.__instance_list = [
+                instance for instance in cls.__instance_list
+                if instance is not remove_instance
+            ]
     
     @classmethod
     def print(cls):
-        for instance in cls.__instance_list:
-            logger.info(instance.command)
-
+        with cls.__instance_lock:
+            instances = list(cls.__instance_list)
+        for instance in instances:
+            logger.info('%s', instance.command)
 
     @classmethod
     def get_instance_by_call_id(cls, call_id):
-        for instance in cls.__instance_list:
+        with cls.__instance_lock:
+            instances = list(cls.__instance_list)
+        for instance in instances:
             if instance.call_id == call_id:
                 return instance
     
     @classmethod
     def get_list(cls):
-        return cls.__instance_list
+        with cls.__instance_lock:
+            return list(cls.__instance_list)

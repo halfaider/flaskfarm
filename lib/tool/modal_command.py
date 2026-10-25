@@ -93,6 +93,7 @@ class ToolModalCommand(object):
         #F.logger.warning(text)
         if cls.__show_modal == False:
             return
+        mode = mode.lower() if isinstance(mode, str) else mode
         if mode == 'end':
             F.socketio.emit("command_modal_add_text", "\n\n<<프로세스 종료>>", namespace='/framework')
             F.socketio.emit("command_modal_input_disable", "", namespace='/framework')
