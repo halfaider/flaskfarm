@@ -5,6 +5,7 @@ import traceback
 from flask import jsonify, redirect, render_template, request
 from flask_login import login_required
 from framework import F
+from framework.init_route import socketio_login_required
 from support import AlchemyEncoder
 
 
@@ -379,7 +380,7 @@ def default_route_socketio_module(module, attach=''):
         module.socketio_list = []
 
     @F.socketio.on('connect', namespace=f'/{P.package_name}/{module.name}{attach}')
-    @F.login_required
+    @socketio_login_required
     def connect():
         try:
             P.logger.debug(f'socket_connect : {P.package_name} - {module.name}{attach}')
@@ -442,12 +443,15 @@ def default_route_socketio_page(page):
         page.socketio_list = []
 
     @F.socketio.on('connect', namespace=f'/{P.package_name}/{module.name}/{page.name}')
-    @F.login_required
+    @socketio_login_required
     def page_socketio_connect():
         try:
-            #P.logger.debug(f'socket_connect : {P.package_name}/{module.name}/{page.name}')
+            P.logger.debug(f'socket_connect : {P.package_name}/{module.name}/{page.name}')
             page.socketio_list.append(request.sid)
             page_socketio_socketio_callback('start', '')
+            connect_callback = getattr(page, 'socketio_connect', None)
+            if callable(connect_callback):
+                connect_callback()
         except Exception as e: 
             P.logger.error(f'Exception:{str(e)}')
             P.logger.error(traceback.format_exc())
@@ -456,8 +460,11 @@ def default_route_socketio_page(page):
     @F.socketio.on('disconnect', namespace=f'/{P.package_name}/{module.name}/{page.name}')
     def page_socketio_disconnect():
         try:
-            #P.logger.debug(f'socket_disconnect : {P.package_name}/{module.name}/{page.name}')
+            P.logger.debug(f'socket_disconnect : {P.package_name}/{module.name}/{page.name}')
             page.socketio_list.remove(request.sid)
+            disconnect_callback = getattr(page, 'socketio_disconnect', None)
+            if callable(disconnect_callback):
+                disconnect_callback()
         except Exception as e: 
             P.logger.error(f'Exception:{str(e)}')
             P.logger.error(traceback.format_exc())

@@ -1,5 +1,7 @@
 from flask_login import current_user, login_user, logout_user
 
+from framework.init_route import socketio_login_required
+
 from .setup import *
 
 name = 'route'
@@ -52,6 +54,7 @@ class ModuleRoute(PluginModuleBase):
 
 
         @F.socketio.on('connect', namespace=f'/{P.package_name}/restart')
+        @socketio_login_required
         def restart_socket_connect():
             F.socketio.emit('connect', {}, namespace='/{P.package_name}/restart')
 

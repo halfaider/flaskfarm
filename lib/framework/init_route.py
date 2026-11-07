@@ -1,10 +1,24 @@
 import os
 import traceback
+from functools import wraps
 
 from flask import (jsonify, redirect, render_template, request,
                    send_from_directory)
-from flask_login import login_required
+from flask_login import current_user, login_required
 from framework import F
+
+
+def socketio_login_required(connect_handler):
+    @wraps(connect_handler)
+    def wrapped_connect_handler(*args, **kwargs):
+        if (
+            F.SystemModelSetting.get_bool('use_login')
+            and not current_user.is_authenticated
+        ):
+            return False
+        return connect_handler(*args, **kwargs)
+
+    return wrapped_connect_handler
 
 
 @F.app.route('/global/ajax/<sub>', methods=['GET', 'POST'])
@@ -154,7 +168,6 @@ def headers():
 
 # 3.10에서 이거 필수
 @F.socketio.on('connect', namespace=f'/framework')
-@login_required
+@socketio_login_required
 def connect():
     pass
-

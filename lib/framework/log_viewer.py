@@ -4,18 +4,21 @@ import time
 import traceback
 
 from flask import request
+from flask_login import current_user
+
 from framework import F
+from framework.init_route import socketio_login_required
 from support import SingletonClass
 
 namespace = 'log'
 
 @F.socketio.on('connect', namespace='/%s' % namespace)
-@F.login_required
-def socket_connect(): 
+@socketio_login_required
+def socket_connect():
     F.logger.debug('log connect')
 
 @F.socketio.on('start', namespace='/%s' % namespace)
-@F.login_required
+@socketio_login_required
 def socket_file(data):
     try:
         package = filename = None
@@ -134,4 +137,3 @@ class LogViewer(SingletonClass):
             F.logger.debug('thread kill')
             cls.watch_list[find_key]['thread'].stop()
             del cls.watch_list[find_key]
-
